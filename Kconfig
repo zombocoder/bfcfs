@@ -1,0 +1,21 @@
+config BFCFS
+	tristate "BFC image filesystem (read-only)"
+	depends on ZSTD_DECOMPRESS && CRYPTO && CRYPTO_AEAD && CRC32
+	select CRYPTO_CHACHA20POLY1305
+	help
+	  Mount .bfc single-file images via a native filesystem (no FUSE).
+	  
+	  BFC (Binary File Container) is a high-performance, single-file
+	  container format that supports compression (Zstd) and encryption 
+	  (ChaCha20-Poly1305). This filesystem allows mounting BFC containers
+	  directly in the kernel with O(log N) file lookups.
+	  
+	  Features:
+	  - Read-only mounting of .bfc containers
+	  - Zstd decompression support
+	  - ChaCha20-Poly1305 AEAD encryption/decryption
+	  - Kernel keyring integration for encryption keys
+	  - Fast random access with sorted index
+	  - POSIX metadata preservation
+	  
+	  If unsure, say N.

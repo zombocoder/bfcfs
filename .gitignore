@@ -1,0 +1,111 @@
+# Kernel module build artifacts
+*.ko
+*.o
+*.mod.c
+*.mod.o
+*.mod
+*.cmd
+*.order
+*.symvers
+*.markers
+*.d
+built-in.o
+
+# Hidden build files
+.*.cmd
+.*.d
+.*.o.d
+.tmp_versions/
+.cache.mk
+
+# Module metadata
+Module.symvers
+modules.order
+modules.builtin
+modules.builtin.modinfo
+
+# Kernel build system files
+built-in.a
+vmlinux
+System.map
+.config
+.config.old
+
+# Build directories
+build/
+out/
+
+# Editor and IDE files
+*~
+.*.sw?
+.sw?
+*.tmp
+*.bak
+*.orig
+.vscode/
+.idea/
+*.sublime-*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Test files and containers
+*.bfc
+test/
+tests/
+*.img
+
+# Documentation build
+*.pdf
+*.dvi
+*.aux
+*.log
+*.toc
+
+# Patch files
+*.patch
+*.diff
+*.rej
+
+# Core dumps
+core
+core.*
+*.core
+
+# Debugging symbols
+*.debug
+
+# DKMS artifacts
+dkms.conf.backup
+
+# Version control
+.svn/
+CVS/
+
+# Package files
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+
+# Local development files
+local.mk
+.local/
+dev/
+
+# Kernel signing
+signing_key.priv
+signing_key.x509
+
+# BTF files
+*.btf
+
+# Clang files
+.clangd/
+compile_commands.json
