@@ -26,6 +26,9 @@ int bfcfs_setup_crypto(struct bfcfs_sb *sbi)
 
 void bfcfs_cleanup_crypto(struct bfcfs_sb *sbi)
 {
+	if (!sbi)
+		return;
+		
 	/* Nothing to clean up in MVP version */
 	sbi->has_key = false;
 	sbi->aead = NULL;

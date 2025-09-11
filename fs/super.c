@@ -13,6 +13,7 @@
 #include <linux/slab.h>
 #include <linux/statfs.h>
 #include <linux/file.h>
+#include <linux/pagemap.h>
 #include <linux/namei.h>
 #include <linux/crc32c.h>
 
@@ -45,6 +46,7 @@ static void bfcfs_free_inode(struct inode *inode)
 
 static void bfcfs_evict_inode(struct inode *inode)
 {
+	truncate_inode_pages_final(&inode->i_data);
 	clear_inode(inode);
 }
 
@@ -52,18 +54,27 @@ static void bfcfs_put_super(struct super_block *sb)
 {
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
 
-	if (sbi) {
-		bfcfs_info(sb, "cleaning up private data");
-		
-		bfcfs_cleanup_crypto(sbi);
-		bfcfs_free_index(sbi);
-		
-		if (sbi->backing)
-			filp_close(sbi->backing, NULL);
-		
-		kfree(sbi);
-		sb->s_fs_info = NULL;
+	if (!sbi)
+		return;
+
+	bfcfs_info(sb, "unmounting filesystem");
+	
+	/* Mark backing file as NULL first to prevent new I/O */
+	if (sbi->backing) {
+		struct file *backing = sbi->backing;
+		sbi->backing = NULL;
+		filp_close(backing, NULL);
 	}
+	
+	/* Clean up in reverse order of initialization */
+	bfcfs_cleanup_crypto(sbi);
+	bfcfs_free_index(sbi);
+	
+	/* Clear superblock info before freeing */
+	sb->s_fs_info = NULL;
+	kfree(sbi);
+	
+	bfcfs_info(sb, "filesystem unmounted cleanly");
 }
 
 static int bfcfs_statfs(struct dentry *dentry, struct kstatfs *buf)
@@ -103,11 +114,18 @@ static int bfcfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	return 0;
 }
 
+static int bfcfs_sync_fs(struct super_block *sb, int wait)
+{
+	/* Read-only filesystem - nothing to sync */
+	return 0;
+}
+
 static const struct super_operations bfcfs_sops = {
 	.alloc_inode	= bfcfs_alloc_inode,
 	.free_inode	= bfcfs_free_inode,
 	.evict_inode	= bfcfs_evict_inode,
 	.put_super	= bfcfs_put_super,
+	.sync_fs	= bfcfs_sync_fs,
 	.statfs		= bfcfs_statfs,
 	.drop_inode	= generic_drop_inode,
 };
@@ -253,7 +271,7 @@ out_free_sbi:
 
 void bfcfs_kill_sb(struct super_block *sb)
 {
-	/* All cleanup is handled by put_super() */
+	/* Let VFS handle cleanup through put_super() */
 	kill_anon_super(sb);
 }
 

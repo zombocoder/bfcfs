@@ -27,9 +27,10 @@ static int bfcfs_readpage_plain(struct bfcfs_sb *sbi, struct bfcfs_entry *entry,
 		return hdr_ret < 0 ? hdr_ret : -EIO;
 	}
 	
-	/* Calculate content offset with proper alignment */
-	loff_t header_end = entry->obj_off + sizeof(struct bfc_obj_header) + le16_to_cpu(obj_hdr.name_len);
-	loff_t content_start = (header_end + 15) & ~15ULL;  /* 16-byte align */
+	/* Calculate content offset exactly like BFC library does */
+	size_t hdr_name_size = sizeof(struct bfc_obj_header) + le16_to_cpu(obj_hdr.name_len);
+	size_t padding = ((hdr_name_size + 15) & ~15ULL) - hdr_name_size;  /* BFC_ALIGN=16 padding */
+	loff_t content_start = entry->obj_off + hdr_name_size + padding;
 	loff_t file_offset = content_start;
 	loff_t page_offset = page->index << PAGE_SHIFT;
 	loff_t read_offset = file_offset + page_offset;
@@ -82,6 +83,13 @@ static int bfcfs_read_folio(struct file *file, struct folio *folio)
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
 	struct bfcfs_inode *bi = BFCFS_I(inode);
 	struct bfcfs_entry *entry;
+
+	/* Safety checks for shutdown scenarios */
+	if (!sbi || !sbi->backing) {
+		SetPageError(page);
+		unlock_page(page);
+		return -EIO;
+	}
 
 	/* Validate entry_id before accessing array */
 	if (bi->entry_id >= sbi->count) {

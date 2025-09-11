@@ -356,6 +356,9 @@ int bfcfs_load_index(struct bfcfs_sb *sbi)
 
 void bfcfs_free_index(struct bfcfs_sb *sbi)
 {
+	if (!sbi)
+		return;
+		
 	if (sbi->ents) {
 		kfree(sbi->ents);
 		sbi->ents = NULL;

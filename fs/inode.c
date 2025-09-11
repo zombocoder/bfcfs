@@ -9,6 +9,7 @@
 #include <linux/fs.h>
 #include <linux/pagemap.h>
 #include <linux/slab.h>
+#include <linux/uio.h>
 
 #include "bfcfs.h"
 
@@ -117,7 +118,7 @@ struct inode *bfcfs_iget(struct super_block *sb, u32 entry_id)
 	} else if (S_ISREG(inode->i_mode)) {
 		inode->i_op = &bfcfs_file_inode_ops;
 		inode->i_fop = &bfcfs_file_file_ops;
-		inode->i_mapping->a_ops = &bfcfs_aops;
+		/* No address space operations - use direct I/O */
 	} else {
 		/* TODO: Support for symlinks and other file types */
 		bfcfs_err(sb, "unsupported file type for entry %u", entry_id);
@@ -269,9 +270,73 @@ static const struct file_operations bfcfs_dir_file_ops = {
 	.llseek		= generic_file_llseek,
 };
 
+/* Simple direct read - bypasses page cache for cleaner unmount */
+static ssize_t bfcfs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
+{
+	struct file *file = iocb->ki_filp;
+	struct inode *inode = file_inode(file);
+	struct super_block *sb = inode->i_sb;
+	struct bfcfs_sb *sbi = BFCFS_SB(sb);
+	struct bfcfs_inode *bi = BFCFS_I(inode);
+	loff_t pos = iocb->ki_pos;
+	size_t count = iov_iter_count(iter);
+	struct bfcfs_entry *entry;
+	ssize_t ret = 0;
+	void *buf;
+
+	if (!sbi || !sbi->backing) {
+		return -EIO;
+	}
+
+	if (bi->entry_id >= sbi->count) {
+		return -EINVAL;
+	}
+
+	entry = &sbi->ents[bi->entry_id];
+	
+	if (pos >= entry->orig_size) {
+		return 0;
+	}
+	
+	count = min_t(size_t, count, entry->orig_size - pos);
+	if (count == 0) {
+		return 0;
+	}
+
+	buf = kmalloc(count, GFP_KERNEL);
+	if (!buf) {
+		return -ENOMEM;
+	}
+
+	/* Calculate content offset like in data.c */
+	struct bfc_obj_header obj_hdr;
+	loff_t hdr_pos = entry->obj_off;
+	ssize_t hdr_ret = kernel_read(sbi->backing, &obj_hdr, sizeof(obj_hdr), &hdr_pos);
+	
+	if (hdr_ret == sizeof(obj_hdr)) {
+		size_t hdr_name_size = sizeof(struct bfc_obj_header) + le16_to_cpu(obj_hdr.name_len);
+		size_t padding = ((hdr_name_size + 15) & ~15ULL) - hdr_name_size;
+		loff_t content_start = entry->obj_off + hdr_name_size + padding;
+		loff_t read_pos = content_start + pos;
+
+		ret = kernel_read(sbi->backing, buf, count, &read_pos);
+		if (ret > 0) {
+			if (copy_to_iter(buf, ret, iter) != ret) {
+				ret = -EFAULT;
+			} else {
+				iocb->ki_pos += ret;
+			}
+		}
+	} else {
+		ret = -EIO;
+	}
+
+	kfree(buf);
+	return ret;
+}
+
 static const struct file_operations bfcfs_file_file_ops = {
-	.read_iter	= generic_file_read_iter,
-	.mmap		= generic_file_mmap,
+	.read_iter	= bfcfs_file_read_iter,
 	.llseek		= generic_file_llseek,
 };
 
