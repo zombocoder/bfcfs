@@ -1,12 +1,32 @@
 # BFCFS - BFC Kernel Filesystem Driver
 
+[![Build Status](https://github.com/zombocoder/bfcfs/workflows/Build%20bfcfs%20(headers%206.8.0-49-generic)/badge.svg)](https://github.com/zombocoder/bfcfs/actions)
+[![License: GPL v2](https://img.shields.io/badge/License-GPL_v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
+[![Kernel Support](https://img.shields.io/badge/Kernel-6.8.x+-green.svg)](https://kernel.org/)
+[![Status](https://img.shields.io/badge/Status-Stable-brightgreen.svg)](#current-status-phase-0-mvp)
+
 A native Linux kernel filesystem driver for mounting BFC (Binary File Container) images directly without FUSE.
 
-## Current Status: Phase 0 MVP
+## Features
 
-- ✅ **Module Loading**: Loads and registers as kernel filesystem
-- ✅ **Basic Infrastructure**: Mount parsing, index loading, VFS integration
-- ✅ **Uncompressed Files**: Can read plain (uncompressed, unencrypted) files
+- 🚀 **Native Performance**: Direct kernel integration, no FUSE overhead
+- 📁 **Full Directory Support**: Complete directory tree navigation and listing
+- 📄 **File Reading**: Accurate and complete file content access
+- 🔒 **Memory Safe**: Proper VFS integration with clean resource management
+- ⚡ **Direct I/O**: Efficient file reading bypassing page cache complications
+- 🛡️ **Crash-Free**: Stable mount/unmount operations without kernel crashes
+- 🔧 **Standard Tools**: Works with all standard Linux file utilities (`ls`, `cat`, `cp`, etc.)
+
+## Current Status: Phase 0 MVP - ✅ **STABLE**
+
+The BFCFS kernel module is now fully functional for basic BFC container operations:
+
+- ✅ **Module Loading/Unloading**: Clean insertion and removal from kernel
+- ✅ **Mount/Unmount Operations**: Proper VFS integration without crashes
+- ✅ **Directory Operations**: Full directory listing and navigation
+- ✅ **File Reading**: Complete and accurate file content access
+- ✅ **Uncompressed Files**: Full support for plain (uncompressed, unencrypted) files
+- ✅ **VFS Integration**: Proper inode allocation and memory management
 - 🚧 **Compression**: Zstd support planned (Phase 0.2)
 - 🚧 **Encryption**: AEAD encryption planned (Phase 0.3)
 
@@ -49,6 +69,26 @@ sudo make install
 ```
 
 ## Usage
+
+### Quick Start Example
+
+```bash
+# Load the module
+sudo insmod bfcfs.ko
+
+# Mount a BFC container
+sudo mount -t bfcfs -o source=/path/to/container.bfc none /mnt/bfc
+
+# Browse contents
+ls -la /mnt/bfc/
+cat /mnt/bfc/some-file.txt
+
+# Unmount cleanly
+sudo umount /mnt/bfc
+
+# Unload module
+sudo rmmod bfcfs
+```
 
 ### Basic Mount (uncompressed containers only)
 
@@ -186,13 +226,17 @@ bfc create -c zstd test.bfc /path/to/source/
 
 ## Implementation Phases
 
-### Phase 0: Foundation (✅ Complete)
+### Phase 0: Foundation (✅ **COMPLETED**)
 
 - [x] Module infrastructure and VFS registration
-- [x] Mount option parsing
-- [x] BFC index parsing and validation
-- [x] Basic file and directory operations
+- [x] Mount option parsing and validation  
+- [x] BFC container format parsing and index loading
+- [x] Proper VFS inode allocation and memory management
+- [x] Directory operations (listing, lookup, navigation)
+- [x] File reading operations with direct I/O
+- [x] Clean mount/unmount without kernel crashes
 - [x] Support for uncompressed, unencrypted files
+- [x] Synthetic root directory handling
 
 ### Phase 0.2: Compression Support (🚧 Planned)
 
