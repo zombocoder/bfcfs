@@ -19,7 +19,7 @@ jobs:
         run: |
           set -eux
           sudo apt-get update
-          sudo apt-get install -y build-essential bc flex bison libelf-dev pkg-config pahole gcc clang lld gcc-12
+          sudo apt-get install -y build-essential bc flex bison libelf-dev pkg-config pahole gcc clang-14 lld gcc-12
 
       - name: Install specific kernel headers (${{ env.KVER }})
         run: |
@@ -30,7 +30,7 @@ jobs:
       - name: Build with GCC
         run: |
           set -eux
-          make KERNELDIR="${KDIR}" CC=gcc
+          make KERNELDIR="${KDIR}" CC=gcc-12
           test -f bfcfs.ko
 
       - name: Clean (between compilers)
@@ -39,7 +39,7 @@ jobs:
       - name: Build with Clang
         run: |
           set -eux
-          make KERNELDIR="${KDIR}" CC=clang
+          make KERNELDIR="${KDIR}" CC=clang-14
           test -f bfcfs.ko
 
       - name: Show modinfo
