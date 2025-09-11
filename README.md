@@ -14,9 +14,19 @@ A native Linux kernel filesystem driver for mounting BFC (Binary File Container)
 
 ### Prerequisites
 
+**Important**: This filesystem driver requires **Linux kernel 6.8.x or newer** due to VFS API changes.
+
 ```bash
-# Ensure kernel headers are installed
+# For Ubuntu 22.04, install kernel 6.8.x
+sudo apt update
+sudo apt install linux-image-6.8.0-49-generic linux-headers-6.8.0-49-generic
+sudo reboot
+
+# After reboot, ensure kernel headers are installed
 sudo apt install linux-headers-$(uname -r)
+
+# Verify kernel version
+uname -r  # Should show 6.8.x
 ```
 
 ### Build Commands
@@ -66,6 +76,67 @@ sudo umount /mnt/bfc
 
 ```bash
 sudo mount -t bfcfs -o source=/tmp/app.bfc,verify=deep /mnt/app
+```
+
+## Module Signing (Optional)
+
+By default, loading the BFC module will show a "module verification failed" warning and taint the kernel. This is normal for out-of-tree modules but can be avoided by signing the module.
+
+### Method 1: Self-Signed Certificate (Recommended)
+
+```bash
+# Generate signing certificate and private key
+openssl req -new -x509 -newkey rsa:2048 -keyout MOK.priv -outform DER -out MOK.der \
+    -nodes -days 36500 -subj "/CN=BFC Module/"
+
+# Sign the compiled module
+sudo /usr/src/linux-headers-$(uname -r)/scripts/sign-file sha512 MOK.priv MOK.der bfcfs.ko
+
+# Import certificate to Machine Owner Key (MOK) list
+sudo mokutil --import MOK.der
+# Enter a password when prompted (e.g., "bfcmodule")
+
+# Reboot and enroll the key
+sudo reboot
+```
+
+**During boot:**
+1. UEFI will prompt for MOK enrollment
+2. Select "Enroll MOK" → "Continue"  
+3. Enter the password you set above
+4. Reboot to complete enrollment
+
+**After enrollment:**
+```bash
+# Load the signed module (no more tainted kernel warnings)
+sudo insmod bfcfs.ko
+
+# Verify signing status
+modinfo bfcfs.ko | grep sig
+```
+
+### Method 2: Disable Signature Verification
+
+Alternative approach - add kernel parameter to disable module signature checking:
+
+```bash
+# Edit GRUB configuration
+sudo nano /etc/default/grub
+
+# Add to GRUB_CMDLINE_LINUX_DEFAULT:
+GRUB_CMDLINE_LINUX_DEFAULT="... module.sig_enforce=0"
+
+# Update GRUB and reboot
+sudo update-grub
+sudo reboot
+```
+
+### Verification
+
+Check if module is properly signed:
+```bash
+modinfo bfcfs.ko | grep sig
+# Should show: sig_id, signer, sig_key, sig_hashalgo, signature
 ```
 
 ## Development
@@ -152,11 +223,13 @@ bfc create -c zstd test.bfc /path/to/source/
 
 ### Building Against Different Kernels
 
-```bash
-# Build for specific kernel version
-make KERNELDIR=/lib/modules/6.1.0/build
+**Note**: Only kernel 6.8.x and newer are supported.
 
-# Cross-compile (if toolchain available)
+```bash
+# Build for specific kernel version (6.8.x+ only)
+make KERNELDIR=/lib/modules/6.8.0-49/build
+
+# Cross-compile (if toolchain available, 6.8.x+ only)
 make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 ```
 

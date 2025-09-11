@@ -85,15 +85,17 @@ struct bfc_footer {
 } __packed;
 
 struct bfc_obj_header {
-	u32 type;
-	u32 name_len;
-	u64 content_size;
-	u32 mode;
-	u64 mtime_ns;
-	u32 comp;
-	u32 enc;
-	u32 crc32c;
-	u32 reserved;
+	u8 type;        // object type
+	u8 comp;        // compression type  
+	u8 enc;         // encryption type
+	u8 reserved;    // reserved for future use
+	u16 name_len;   // length of name in bytes
+	u16 padding;    // padding for alignment
+	u32 mode;       // POSIX mode bits
+	u64 mtime_ns;   // modification time in nanoseconds
+	u64 orig_size;  // original size
+	u64 enc_size;   // encoded size (after compression + encryption)
+	u32 crc32c;     // CRC32C of original content
 } __packed;
 
 struct bfc_index_header {
@@ -260,6 +262,7 @@ struct dentry *bfcfs_lookup(struct inode *dir, struct dentry *dentry,
 /* data.c */
 int bfcfs_readpage(struct file *file, struct page *page);
 void bfcfs_readahead(struct readahead_control *rac);
+extern const struct address_space_operations bfcfs_aops;
 
 /* crypto.c */
 int bfcfs_setup_crypto(struct bfcfs_sb *sbi);

@@ -48,12 +48,36 @@ static void bfcfs_evict_inode(struct inode *inode)
 	clear_inode(inode);
 }
 
+static void bfcfs_put_super(struct super_block *sb)
+{
+	struct bfcfs_sb *sbi = BFCFS_SB(sb);
+
+	if (sbi) {
+		bfcfs_info(sb, "cleaning up private data");
+		
+		bfcfs_cleanup_crypto(sbi);
+		bfcfs_free_index(sbi);
+		
+		if (sbi->backing)
+			filp_close(sbi->backing, NULL);
+		
+		kfree(sbi);
+		sb->s_fs_info = NULL;
+	}
+}
+
 static int bfcfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct super_block *sb = dentry->d_sb;
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
 	u64 total_size = 0;
 	u32 i;
+
+	/* Add safety check */
+	if (!sbi) {
+		bfcfs_err(sb, "statfs called with NULL sbi");
+		return -EIO;
+	}
 
 	/* Calculate total uncompressed size */
 	for (i = 0; i < sbi->count; i++) {
@@ -83,6 +107,7 @@ static const struct super_operations bfcfs_sops = {
 	.alloc_inode	= bfcfs_alloc_inode,
 	.free_inode	= bfcfs_free_inode,
 	.evict_inode	= bfcfs_evict_inode,
+	.put_super	= bfcfs_put_super,
 	.statfs		= bfcfs_statfs,
 	.drop_inode	= generic_drop_inode,
 };
@@ -189,13 +214,9 @@ int bfcfs_fill_super(struct super_block *sb, void *data, int silent)
 		bfcfs_info(sb, "container verification passed");
 	}
 
-	/* Set block size */
-	if (!sb_set_blocksize(sb, sbi->block_size)) {
-		if (!silent)
-			bfcfs_err(sb, "invalid block size %u", sbi->block_size);
-		ret = -EINVAL;
-		goto out_cleanup_crypto;
-	}
+	/* Set logical block size for VFS layer (file-based, not block device) */
+	sb->s_blocksize = sbi->block_size;
+	sb->s_blocksize_bits = ilog2(sbi->block_size);
 
 	/* Create root inode */
 	root_inode = bfcfs_make_root_inode(sb);
@@ -232,22 +253,8 @@ out_free_sbi:
 
 void bfcfs_kill_sb(struct super_block *sb)
 {
-	struct bfcfs_sb *sbi = BFCFS_SB(sb);
-
-	if (sbi) {
-		bfcfs_info(sb, "unmounting");
-		
-		bfcfs_cleanup_crypto(sbi);
-		bfcfs_free_index(sbi);
-		
-		if (sbi->backing)
-			filp_close(sbi->backing, NULL);
-			
-		kfree(sbi);
-		sb->s_fs_info = NULL;
-	}
-	
-	kill_block_super(sb);
+	/* All cleanup is handled by put_super() */
+	kill_anon_super(sb);
 }
 
 static struct dentry *bfcfs_mount(struct file_system_type *fs_type,

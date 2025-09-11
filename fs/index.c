@@ -243,7 +243,7 @@ static int bfcfs_parse_index_entries(struct bfcfs_sb *sbi, const void *blob, u64
 		name_offset += path_len + 1;
 		ptr += path_len;
 
-		/* Read fixed fields (following real BFC format) */
+		/* Read fixed fields (following actual BFC implementation format) */
 		ent->obj_off = le64_to_cpu(*(u64*)ptr);            ptr += 8;
 		ent->obj_size = le64_to_cpu(*(u64*)ptr);           ptr += 8; 
 		ent->mode = le32_to_cpu(*(u32*)ptr);               ptr += 4;
