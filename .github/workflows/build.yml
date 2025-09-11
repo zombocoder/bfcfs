@@ -1,0 +1,59 @@
+name: Build bfcfs (headers 6.8.0-49-generic)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      KVER: 6.8.0-49-generic
+      KDIR: /usr/src/linux-headers-6.8.0-49-generic
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc flex bison libelf-dev pkg-config pahole gcc clang lld
+
+      - name: Install specific kernel headers (${{ env.KVER }})
+        run: |
+          set -eux
+          sudo apt-get install -y "linux-headers-${KVER}"
+          test -d "${KDIR}" || { echo "::error::Headers not found at ${KDIR}"; exit 1; }
+
+      - name: Build with GCC
+        run: |
+          set -eux
+          make KERNELDIR="${KDIR}" CC=gcc
+          test -f bfcfs.ko
+
+      - name: Clean (between compilers)
+        run: make clean || true
+
+      - name: Build with Clang
+        run: |
+          set -eux
+          make KERNELDIR="${KDIR}" CC=clang
+          test -f bfcfs.ko
+
+      - name: Show modinfo
+        run: |
+          (command -v modinfo && modinfo ./bfcfs.ko) || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bfcfs-${{ env.KVER }}
+          path: |
+            bfcfs.ko
+            Module.symvers
+            modules.order
+            *.mod
+          if-no-files-found: error
+
