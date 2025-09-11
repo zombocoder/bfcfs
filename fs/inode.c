@@ -22,7 +22,6 @@ struct inode *bfcfs_make_root_inode(struct super_block *sb)
 {
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
 	struct inode *inode;
-	struct bfcfs_inode *bi;
 	int root_id;
 
 	/* Try to find explicit root directory entry with path "/" */
@@ -45,8 +44,8 @@ struct inode *bfcfs_make_root_inode(struct super_block *sb)
 	if (!inode)
 		return ERR_PTR(-ENOMEM);
 
-	bi = BFCFS_I(inode);
-	bi->entry_id = -1;  /* Special marker for synthetic root */
+	/* Store entry_id in i_private for synthetic root */
+	inode->i_private = (void *)(long)-1;  /* Special marker for synthetic root */
 
 	/* Set up synthetic root directory */
 	inode->i_ino = 1;  /* Root inode number */
@@ -71,7 +70,6 @@ struct inode *bfcfs_iget(struct super_block *sb, u32 entry_id)
 {
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
 	struct bfcfs_entry *entry;
-	struct bfcfs_inode *bi;
 	struct inode *inode;
 	ino_t ino;
 
@@ -92,8 +90,8 @@ struct inode *bfcfs_iget(struct super_block *sb, u32 entry_id)
 	if (!(inode->i_state & I_NEW))
 		return inode;
 
-	bi = BFCFS_I(inode);
-	bi->entry_id = entry_id;
+	/* Store entry_id in i_private */
+	inode->i_private = (void *)(long)entry_id;
 
 	/* Set up inode attributes */
 	inode->i_mode = entry->mode;
@@ -126,6 +124,7 @@ struct inode *bfcfs_iget(struct super_block *sb, u32 entry_id)
 		return ERR_PTR(-ENOTSUPP);
 	}
 
+	insert_inode_hash(inode);
 	unlock_new_inode(inode);
 	return inode;
 }
@@ -135,16 +134,16 @@ int bfcfs_readdir(struct file *file, struct dir_context *ctx)
 	struct inode *inode = file_inode(file);
 	struct super_block *sb = inode->i_sb;
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
-	struct bfcfs_inode *bi = BFCFS_I(inode);
+	u32 entry_id = BFCFS_ENTRY_ID(inode);
 	const char *dir_path;
 	u32 i;
 	int pos = 0;
 
 	/* Handle synthetic root directory */
-	if (bi->entry_id == (u32)-1) {
+	if (entry_id == (u32)-1) {
 		dir_path = "/";  /* Synthetic root path */
 	} else {
-		struct bfcfs_entry *dir_entry = &sbi->ents[bi->entry_id];
+		struct bfcfs_entry *dir_entry = &sbi->ents[entry_id];
 		dir_path = sbi->strtab + dir_entry->name_off;
 	}
 
@@ -172,13 +171,13 @@ int bfcfs_readdir(struct file *file, struct dir_context *ctx)
 		size_t name_len;
 
 		/* Check if this entry is a direct child of current directory */
-		if (bi->entry_id == (u32)-1) {
+		if (entry_id == (u32)-1) {
 			/* For synthetic root, show top-level entries (no slash in path) */
 			if (strchr(entry_path, '/') != NULL)
 				continue;
 		} else {
 			/* For normal directories, use parent_id */
-			if (entry->parent_id != bi->entry_id)
+			if (entry->parent_id != entry_id)
 				continue;
 		}
 
@@ -214,18 +213,18 @@ struct dentry *bfcfs_lookup(struct inode *dir, struct dentry *dentry,
 {
 	struct super_block *sb = dir->i_sb;
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
-	struct bfcfs_inode *parent_bi = BFCFS_I(dir);
+	u32 parent_entry_id = BFCFS_ENTRY_ID(dir);
 	char *full_path;
 	int entry_id;
 	struct inode *inode = NULL;
 
 	/* Handle synthetic root directory (entry_id = -1) */
-	if (parent_bi->entry_id == (u32)-1) {
+	if (parent_entry_id == (u32)-1) {
 		/* This is synthetic root, construct path as /name */
 		full_path = kasprintf(GFP_KERNEL, "%s", dentry->d_name.name);
 	} else {
 		/* Normal directory - get parent path from entry */
-		struct bfcfs_entry *parent_entry = &sbi->ents[parent_bi->entry_id];
+		struct bfcfs_entry *parent_entry = &sbi->ents[parent_entry_id];
 		const char *parent_path = sbi->strtab + parent_entry->name_off;
 		
 		/* Construct full path */
@@ -277,7 +276,7 @@ static ssize_t bfcfs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	struct inode *inode = file_inode(file);
 	struct super_block *sb = inode->i_sb;
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
-	struct bfcfs_inode *bi = BFCFS_I(inode);
+	u32 entry_id = BFCFS_ENTRY_ID(inode);
 	loff_t pos = iocb->ki_pos;
 	size_t count = iov_iter_count(iter);
 	struct bfcfs_entry *entry;
@@ -288,11 +287,11 @@ static ssize_t bfcfs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 		return -EIO;
 	}
 
-	if (bi->entry_id >= sbi->count) {
+	if (entry_id >= sbi->count) {
 		return -EINVAL;
 	}
 
-	entry = &sbi->ents[bi->entry_id];
+	entry = &sbi->ents[entry_id];
 	
 	if (pos >= entry->orig_size) {
 		return 0;

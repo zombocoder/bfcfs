@@ -81,7 +81,7 @@ static int bfcfs_read_folio(struct file *file, struct folio *folio)
 	struct inode *inode = file ? file_inode(file) : page->mapping->host;
 	struct super_block *sb = inode->i_sb;
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
-	struct bfcfs_inode *bi = BFCFS_I(inode);
+	u32 entry_id = BFCFS_ENTRY_ID(inode);
 	struct bfcfs_entry *entry;
 
 	/* Safety checks for shutdown scenarios */
@@ -92,16 +92,16 @@ static int bfcfs_read_folio(struct file *file, struct folio *folio)
 	}
 
 	/* Validate entry_id before accessing array */
-	if (bi->entry_id >= sbi->count) {
-		bfcfs_err(sb, "read_folio: invalid entry_id=%u (count=%u)", bi->entry_id, sbi->count);
+	if (entry_id >= sbi->count) {
+		bfcfs_err(sb, "read_folio: invalid entry_id=%u (count=%u)", entry_id, sbi->count);
 		SetPageError(page);
 		unlock_page(page);
 		return -EINVAL;
 	}
 
-	entry = &sbi->ents[bi->entry_id];
-	bfcfs_debug(sb, "read_folio: entry_id=%u, page=%lu, name_len=%u, obj_off=%llu", 
-		   bi->entry_id, page->index, entry->name_len, entry->obj_off);
+	entry = &sbi->ents[entry_id];
+	bfcfs_debug(sb, "read_folio: entry_id=%u, page=%lu, obj_off=%llu", 
+		   entry_id, page->index, entry->obj_off);
 
 	/* For now, only handle uncompressed, unencrypted files */
 	if (entry->comp != BFC_COMP_NONE || entry->enc != BFC_ENC_NONE) {

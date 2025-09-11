@@ -221,20 +221,17 @@ struct bfcfs_sb {
 	struct mutex crypto_lock;	/* Protects crypto operations */
 };
 
-/* Inode private data */
-struct bfcfs_inode {
-	u32 entry_id;			/* Index into sbi->ents[] */
-	struct inode inode;
-};
+/* Inode data stored in inode->i_private as entry_id */
 
 static inline struct bfcfs_sb *BFCFS_SB(struct super_block *sb)
 {
 	return sb->s_fs_info;
 }
 
-static inline struct bfcfs_inode *BFCFS_I(struct inode *inode)
+/* Helper to get entry_id from inode - stored in i_private */
+static inline u32 BFCFS_ENTRY_ID(struct inode *inode)
 {
-	return container_of(inode, struct bfcfs_inode, inode);
+	return (u32)(long)inode->i_private;
 }
 
 /* Function declarations */

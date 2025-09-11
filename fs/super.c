@@ -24,25 +24,7 @@ MODULE_DESCRIPTION("BFC read-only filesystem");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("0.1.0");
 
-static struct kmem_cache *bfcfs_inode_cache;
-
-static struct inode *bfcfs_alloc_inode(struct super_block *sb)
-{
-	struct bfcfs_inode *bi;
-
-	bi = kmem_cache_alloc(bfcfs_inode_cache, GFP_KERNEL);
-	if (!bi)
-		return NULL;
-
-	bi->entry_id = 0;
-	return &bi->inode;
-}
-
-static void bfcfs_free_inode(struct inode *inode)
-{
-	struct bfcfs_inode *bi = BFCFS_I(inode);
-	kmem_cache_free(bfcfs_inode_cache, bi);
-}
+/* Use VFS inode allocation - no custom allocator needed */
 
 static void bfcfs_evict_inode(struct inode *inode)
 {
@@ -121,13 +103,11 @@ static int bfcfs_sync_fs(struct super_block *sb, int wait)
 }
 
 static const struct super_operations bfcfs_sops = {
-	.alloc_inode	= bfcfs_alloc_inode,
-	.free_inode	= bfcfs_free_inode,
 	.evict_inode	= bfcfs_evict_inode,
 	.put_super	= bfcfs_put_super,
 	.sync_fs	= bfcfs_sync_fs,
 	.statfs		= bfcfs_statfs,
-	.drop_inode	= generic_drop_inode,
+	.drop_inode	= generic_delete_inode,
 };
 
 static int bfcfs_validate_backing_file(struct file *file)
@@ -289,11 +269,6 @@ static struct file_system_type bfcfs_type = {
 	.fs_flags	= 0,
 };
 
-static void bfcfs_inode_init_once(void *obj)
-{
-	struct bfcfs_inode *bi = obj;
-	inode_init_once(&bi->inode);
-}
 
 static int __init bfcfs_init(void)
 {
@@ -301,30 +276,16 @@ static int __init bfcfs_init(void)
 
 	pr_info("bfcfs: BFC filesystem module loading\n");
 
-	/* Create inode cache */
-	bfcfs_inode_cache = kmem_cache_create("bfcfs_inode",
-					      sizeof(struct bfcfs_inode),
-					      0,
-					      SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD | SLAB_ACCOUNT,
-					      bfcfs_inode_init_once);
-	if (!bfcfs_inode_cache) {
-		pr_err("bfcfs: failed to create inode cache\n");
-		return -ENOMEM;
-	}
 
 	/* Register filesystem */
 	ret = register_filesystem(&bfcfs_type);
 	if (ret) {
 		pr_err("bfcfs: failed to register filesystem: %d\n", ret);
-		goto out_destroy_cache;
+		return ret;
 	}
 
 	pr_info("bfcfs: filesystem registered successfully\n");
 	return 0;
-
-out_destroy_cache:
-	kmem_cache_destroy(bfcfs_inode_cache);
-	return ret;
 }
 
 static void __exit bfcfs_exit(void)
@@ -332,13 +293,6 @@ static void __exit bfcfs_exit(void)
 	pr_info("bfcfs: unloading filesystem module\n");
 	
 	unregister_filesystem(&bfcfs_type);
-	
-	/* 
-	 * Make sure all inodes are evicted before destroying cache.
-	 * rcu_barrier() ensures all RCU callbacks have completed.
-	 */
-	rcu_barrier();
-	kmem_cache_destroy(bfcfs_inode_cache);
 	
 	pr_info("bfcfs: filesystem unloaded\n");
 }
