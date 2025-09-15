@@ -34,6 +34,11 @@
 #define BFC_COMP_NONE		0
 #define BFC_COMP_ZSTD		1
 
+/* Object Types */
+#define BFC_TYPE_FILE		1
+#define BFC_TYPE_DIR		2
+#define BFC_TYPE_SYMLINK	3
+
 /* Encryption Types */
 #define BFC_ENC_NONE		0
 #define BFC_ENC_CHACHA20_POLY1305	1

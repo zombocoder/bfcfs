@@ -17,6 +17,7 @@ static const struct inode_operations bfcfs_dir_inode_ops;
 static const struct file_operations bfcfs_dir_file_ops;
 static const struct inode_operations bfcfs_file_inode_ops;
 static const struct file_operations bfcfs_file_file_ops;
+static const struct inode_operations bfcfs_symlink_inode_ops;
 
 struct inode *bfcfs_make_root_inode(struct super_block *sb)
 {
@@ -117,8 +118,12 @@ struct inode *bfcfs_iget(struct super_block *sb, u32 entry_id)
 		inode->i_op = &bfcfs_file_inode_ops;
 		inode->i_fop = &bfcfs_file_file_ops;
 		/* No address space operations - use direct I/O */
+	} else if (S_ISLNK(inode->i_mode)) {
+		inode->i_op = &bfcfs_symlink_inode_ops;
+		/* Symlink size is the length of the target path */
+		/* i_size is already set to entry->orig_size which contains target length */
 	} else {
-		/* TODO: Support for symlinks and other file types */
+		/* Other file types not supported yet */
 		bfcfs_err(sb, "unsupported file type for entry %u", entry_id);
 		iget_failed(inode);
 		return ERR_PTR(-ENOTSUPP);
@@ -193,7 +198,8 @@ int bfcfs_readdir(struct file *file, struct dir_context *ctx)
 		if (pos >= ctx->pos) {
 			ino_t child_ino = hash_64(entry->obj_off, 32) | ((u64)i << 32);
 			unsigned int d_type = S_ISDIR(entry->mode) ? DT_DIR : 
-					      S_ISREG(entry->mode) ? DT_REG : DT_UNKNOWN;
+					      S_ISREG(entry->mode) ? DT_REG :
+					      S_ISLNK(entry->mode) ? DT_LNK : DT_UNKNOWN;
 
 			if (!dir_emit(ctx, name, name_len, child_ino, d_type))
 				break;
@@ -337,6 +343,73 @@ static ssize_t bfcfs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 static const struct file_operations bfcfs_file_file_ops = {
 	.read_iter	= bfcfs_file_read_iter,
 	.llseek		= generic_file_llseek,
+};
+
+/* Symlink operations */
+static const char *bfcfs_get_link(struct dentry *dentry, struct inode *inode,
+				  struct delayed_call *done)
+{
+	struct super_block *sb = inode->i_sb;
+	struct bfcfs_sb *sbi = BFCFS_SB(sb);
+	u32 entry_id = BFCFS_ENTRY_ID(inode);
+	struct bfcfs_entry *entry;
+	char *link_target;
+	ssize_t ret;
+
+	if (!sbi || !sbi->backing) {
+		return ERR_PTR(-EIO);
+	}
+
+	if (entry_id >= sbi->count) {
+		return ERR_PTR(-EINVAL);
+	}
+
+	entry = &sbi->ents[entry_id];
+	
+	if (!S_ISLNK(entry->mode)) {
+		return ERR_PTR(-EINVAL);
+	}
+
+	/* Allocate buffer for symlink target */
+	link_target = kmalloc(entry->orig_size + 1, GFP_KERNEL);
+	if (!link_target) {
+		return ERR_PTR(-ENOMEM);
+	}
+
+	/* Read symlink target from container */
+	struct bfc_obj_header obj_hdr;
+	loff_t hdr_pos = entry->obj_off;
+	ssize_t hdr_ret = kernel_read(sbi->backing, &obj_hdr, sizeof(obj_hdr), &hdr_pos);
+	
+	if (hdr_ret != sizeof(obj_hdr)) {
+		kfree(link_target);
+		return ERR_PTR(-EIO);
+	}
+
+	/* Calculate content offset */
+	size_t hdr_name_size = sizeof(struct bfc_obj_header) + le16_to_cpu(obj_hdr.name_len);
+	size_t padding = ((hdr_name_size + 15) & ~15ULL) - hdr_name_size;
+	loff_t content_start = entry->obj_off + hdr_name_size + padding;
+	loff_t read_pos = content_start;
+
+	/* Read the symlink target */
+	ret = kernel_read(sbi->backing, link_target, entry->orig_size, &read_pos);
+	if (ret != entry->orig_size) {
+		kfree(link_target);
+		return ERR_PTR(-EIO);
+	}
+
+	/* Null-terminate the target string */
+	link_target[entry->orig_size] = '\0';
+
+	/* Set up delayed cleanup */
+	set_delayed_call(done, kfree_link, link_target);
+	
+	return link_target;
+}
+
+static const struct inode_operations bfcfs_symlink_inode_ops = {
+	.get_link = bfcfs_get_link,
 };
 
 /* Address space operations - implemented in data.c */
