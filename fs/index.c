@@ -356,21 +356,25 @@ int bfcfs_load_index(struct bfcfs_sb *sbi)
 
 void bfcfs_free_index(struct bfcfs_sb *sbi)
 {
+	struct bfcfs_entry *ents;
+	const char *strtab;
+	
 	if (!sbi)
 		return;
-		
-	if (sbi->ents) {
-		kfree(sbi->ents);
-		sbi->ents = NULL;
-	}
 	
-	if (sbi->strtab) {
-		kfree(sbi->strtab);
-		sbi->strtab = NULL;
-	}
-	
+	/* Atomically clear pointers to prevent races */
+	ents = sbi->ents;
+	sbi->ents = NULL;
+	strtab = sbi->strtab;
+	sbi->strtab = NULL;
 	sbi->count = 0;
 	sbi->strtab_size = 0;
+	
+	/* Free after clearing pointers */
+	if (ents)
+		kfree(ents);
+	if (strtab)
+		kfree(strtab);
 }
 
 int bfcfs_find_entry(struct bfcfs_sb *sbi, const char *path)

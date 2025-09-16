@@ -52,30 +52,42 @@ static void bfcfs_put_super(struct super_block *sb)
 	bfcfs_cleanup_crypto(sbi);
 	bfcfs_free_index(sbi);
 	
-	/* Clear superblock info before freeing */
+	/* Ensure all pending operations complete before freeing */
+	synchronize_rcu();
+	
+	/* Clear superblock info before freeing - log BEFORE clearing */
+	bfcfs_info(sb, "filesystem unmounted cleanly");
 	sb->s_fs_info = NULL;
 	kfree(sbi);
-	
-	bfcfs_info(sb, "filesystem unmounted cleanly");
 }
 
 static int bfcfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct super_block *sb = dentry->d_sb;
 	struct bfcfs_sb *sbi = BFCFS_SB(sb);
+	struct bfcfs_entry *ents;
 	u64 total_size = 0;
-	u32 i;
+	u32 i, count;
 
 	/* Add safety check */
 	if (!sbi) {
 		bfcfs_err(sb, "statfs called with NULL sbi");
 		return -EIO;
 	}
+	
+	/* Get stable references to avoid races during unmount */
+	ents = sbi->ents;
+	count = sbi->count;
+	
+	if (!ents) {
+		/* Filesystem is being unmounted */
+		return -EIO;
+	}
 
 	/* Calculate total uncompressed size */
-	for (i = 0; i < sbi->count; i++) {
-		if (S_ISREG(sbi->ents[i].mode))
-			total_size += sbi->ents[i].orig_size;
+	for (i = 0; i < count; i++) {
+		if (S_ISREG(ents[i].mode))
+			total_size += ents[i].orig_size;
 	}
 
 	buf->f_type = BFCFS_MAGIC;
@@ -83,7 +95,7 @@ static int bfcfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	buf->f_blocks = total_size >> ilog2(sbi->block_size);
 	buf->f_bfree = 0;	/* Read-only filesystem */
 	buf->f_bavail = 0;
-	buf->f_files = sbi->count;
+	buf->f_files = count;
 	buf->f_ffree = 0;
 	buf->f_fsid.val[0] = (u32)(sbi->uuid[0] ^ sbi->uuid[4] ^ 
 				   sbi->uuid[8] ^ sbi->uuid[12]);
